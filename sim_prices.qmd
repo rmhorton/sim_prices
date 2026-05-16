@@ -1,0 +1,319 @@
+---
+title: "A Five-Layer Simulation Framework for Bayesian Decision Science"
+format:
+  html:
+    toc: true
+    code-fold: false
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Overview
+
+This document demonstrates a modular simulation framework for decision science. The simulation separates:
+
+1. Generative world model
+2. Observation process
+3. Analytical models
+4. Decision policies
+5. Evaluation metrics
+
+The goal is to show how different analytical assumptions affect business decisions.
+
+# Load Packages
+
+```{r}
+library(tidyverse)
+library(rjags)
+library(coda)
+
+source("world_generation.R")
+source("analytical_models.R")
+source("policy_evaluation.R")
+source("plotting.R")
+```
+
+# Five-Layer Architecture
+
+```{mermaid}
+%%| echo: false
+
+graph TD
+
+world["Generative World"]
+observe["Observation Process"]
+analysis["Analytical Models"]
+decisions["Decision Policies"]
+evaluation["Evaluation"]
+
+world --> observe
+observe --> analysis
+analysis --> decisions
+decisions --> evaluation
+
+```
+
+# Layer 1 — Generative World
+
+The hidden world contains:
+
+- latent customer segments,
+- heterogeneous price sensitivity,
+- lifetime value,
+- and inventory constraints.
+
+```{r}
+N_customers <- 50
+
+customer_df <- generate_customer_world(
+  N_customers = N_customers,
+  seed = 2028
+)
+```
+
+# Simulate Purchase Opportunities
+
+```{r}
+N_offers <- 8
+
+offer_df <- simulate_purchase_opportunities(
+  customer_df = customer_df,
+  N_offers = N_offers
+)
+```
+
+# Visualize True Demand Curves
+
+```{r fig.width=11, fig.height=7}
+sample_customers <- sample(customer_df$customer_id,30)
+
+plot_true_demand_curves(
+  offer_df = offer_df,
+  sample_customers = sample_customers
+)
+```
+
+# Layer 2 — Observation Process
+
+The analyst does not observe:
+
+- latent segment,
+- true willingness-to-pay,
+- or lifetime value.
+
+The analyst only observes:
+
+- price,
+- purchase outcome,
+- and customer ID.
+
+```{r}
+analyst_df <- observe_analyst_data(offer_df)
+```
+
+# Layer 3 — Analytical Models
+
+We compare:
+
+1. Naive aggregate model
+2. Overfit personalization
+3. Hierarchical Bayesian model
+
+# Naive Aggregate Model
+
+```{r}
+naive_df <- fit_naive_aggregate_model(analyst_df)
+```
+
+```{r fig.width=10, fig.height=6}
+plot_naive_demand_curve(naive_df)
+```
+
+# Overfit Personalization
+
+```{r}
+customer_summary <- summarize_customer_conversion(analyst_df)
+```
+
+# Hierarchical Bayesian Model
+
+```{mermaid}
+%%| echo: false
+
+flowchart TD
+
+mu_alpha["μᵅ"]
+sigma_alpha["σᵅ"]
+
+mu_beta["μβ"]
+sigma_beta["σβ"]
+
+alpha["αⱼ"]
+beta["βⱼ"]
+
+price["Price"]
+purchase["Purchase"]
+
+mu_alpha --> alpha
+sigma_alpha --> alpha
+
+mu_beta --> beta
+sigma_beta --> beta
+
+alpha --> purchase
+beta --> purchase
+price --> purchase
+```
+
+# JAGS Model
+
+```{r}
+model_string <- hierarchical_demand_model_string()
+```
+
+```{r}
+bayes_fit <- fit_hierarchical_bayesian_model(
+  analyst_df = analyst_df,
+  N_customers = N_customers,
+  model_string = model_string
+)
+
+jags_data <- bayes_fit$jags_data
+jags_model <- bayes_fit$jags_model
+posterior_samples <- bayes_fit$posterior_samples
+posterior_matrix <- bayes_fit$posterior_matrix
+mu_alpha_post <- bayes_fit$mu_alpha_post
+mu_beta_post <- bayes_fit$mu_beta_post
+```
+
+# Layer 4 — Decision Policies
+
+The company seeks to maximize profit subject to inventory constraints.
+
+```{r}
+unit_cost <- 5
+inventory_limit <- 120
+price_grid <- seq(1,35,by = 0.25)
+```
+
+# True Profit Curve
+
+```{r}
+true_profit_df <- compute_true_profit_curve(
+  customer_df = customer_df,
+  price_grid = price_grid,
+  unit_cost = unit_cost,
+  inventory_limit = inventory_limit
+)
+```
+
+# Naive Profit Curve
+
+```{r}
+naive_profit_df <- compute_naive_profit_curve(
+  naive_df = naive_df,
+  N_customers = N_customers,
+  unit_cost = unit_cost,
+  inventory_limit = inventory_limit
+)
+```
+
+# Hierarchical Bayesian Profit Curve
+
+```{r}
+bayes_profit_df <- compute_bayes_profit_curve(
+  price_grid = price_grid,
+  N_customers = N_customers,
+  mu_alpha_post = mu_alpha_post,
+  mu_beta_post = mu_beta_post,
+  unit_cost = unit_cost,
+  inventory_limit = inventory_limit
+)
+```
+
+# Compare Profit Curves
+
+```{r fig.width=12, fig.height=8}
+comparison_df <- compare_profit_curves(
+  true_profit_df = true_profit_df,
+  naive_profit_df = naive_profit_df,
+  bayes_profit_df = bayes_profit_df
+)
+
+plot_profit_curves(comparison_df)
+```
+
+# Layer 5 — Evaluation
+
+We evaluate decisions using regret.
+
+$$
+\text{Regret}
+=
+\Pi(p^*_{true})
+-
+\Pi(p^*_{estimated})
+$$
+
+# Compute Regret
+
+```{r}
+regret_results <- compute_regret(
+  true_profit_df = true_profit_df,
+  naive_profit_df = naive_profit_df,
+  bayes_profit_df = bayes_profit_df
+)
+
+true_optimal_price <- regret_results$true_optimal_price
+naive_optimal_price <- regret_results$naive_optimal_price
+bayes_optimal_price <- regret_results$bayes_optimal_price
+true_optimal_profit <- regret_results$true_optimal_profit
+naive_realized_profit <- regret_results$naive_realized_profit
+bayes_realized_profit <- regret_results$bayes_realized_profit
+regret_df <- regret_results$regret_df
+
+regret_df
+```
+
+# Visualize Regret
+
+```{r fig.width=10, fig.height=6}
+plot_regret(regret_df)
+```
+
+# Interpretation
+
+This framework separates:
+
+- the hidden world,
+- the observation process,
+- analytical assumptions,
+- operational decisions,
+- and evaluation metrics.
+
+This allows us to study:
+
+- omitted-variable bias,
+- aggregation bias,
+- sparse-data instability,
+- partial pooling,
+- and decision quality.
+
+The key insight is that analytical assumptions directly affect operational decisions.
+
+# Future Extensions
+
+Possible extensions include:
+
+- dynamic pricing,
+- Thompson sampling,
+- reinforcement learning,
+- competitor reactions,
+- nonstationary demand,
+- customer churn,
+- and causal confounding.
+
+The modular architecture allows each component of the simulation to be independently modified and evaluated.
