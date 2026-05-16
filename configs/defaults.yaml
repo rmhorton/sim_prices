@@ -1,0 +1,32 @@
+unit_cost: 5
+price_grid:
+  min: 1
+  max: 35
+  by: 0.25
+offer_price_range:
+  min: 2
+  max: 30
+random_seed: 2028
+promotional_effects:
+  enabled: true
+  probability: 0.20
+  logit_lift_mean: 0.25
+  logit_lift_sd: 0.10
+replenishment:
+  enabled: false
+  quantity: 0
+  interval: .inf
+inventory_behavior:
+  enabled: true
+  scarcity_logit_lift: 0.40
+  abundance_logit_penalty: 0.15
+lifetime_value:
+  Budget:
+    mean: 100
+    sd: 20
+  Mainstream:
+    mean: 350
+    sd: 40
+  Premium:
+    mean: 1200
+    sd: 150

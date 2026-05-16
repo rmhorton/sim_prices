@@ -1,0 +1,4 @@
+model,backend,status,extension_notes
+Naive Aggregate,R,active,Replace or extend with pooled GLM variants.
+Hierarchical Bayesian,JAGS,active,Can be swapped for Stan by returning the same posterior summary interface.
+Misspecified Linear,R,active,Use as a baseline for deliberate misspecification tests.

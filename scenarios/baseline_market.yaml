@@ -1,0 +1,47 @@
+name: Baseline Market
+description: Balanced reference market matching the original simulation scale.
+market_size: 50
+inventory_limits:
+  total: 120
+customer_segment_proportions:
+  Budget: 0.50
+  Mainstream: 0.35
+  Premium: 0.15
+price_elasticity_parameters:
+  Budget:
+    alpha_mean: 0.8
+    alpha_sd: 0.5
+    beta_mean: -0.85
+    beta_sd: 0.12
+  Mainstream:
+    alpha_mean: 1.6
+    alpha_sd: 0.5
+    beta_mean: -0.45
+    beta_sd: 0.10
+  Premium:
+    alpha_mean: 2.5
+    alpha_sd: 0.5
+    beta_mean: -0.15
+    beta_sd: 0.08
+noise_levels:
+  price_noise_sd: 0
+  purchase_noise_sd: 0
+simulation_horizon: 8
+demand_shock_settings:
+  enabled: false
+  probability: 0
+  logit_shift_mean: 0
+  logit_shift_sd: 0
+promotional_effects:
+  enabled: true
+  probability: 0.20
+  logit_lift_mean: 0.25
+  logit_lift_sd: 0.10
+replenishment:
+  enabled: false
+  quantity: 0
+  interval: .inf
+inventory_behavior:
+  enabled: true
+  scarcity_logit_lift: 0.40
+  abundance_logit_penalty: 0.15

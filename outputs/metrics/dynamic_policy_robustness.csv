@@ -1,0 +1,13 @@
+scenario_id,scenario,demand_shocks_enabled,policy,runs,mean_total_profit,mean_cumulative_regret,mean_stockout_frequency,mean_final_inventory
+baseline_market,Baseline Market,FALSE,Static Pricing,1,166.25,645.5354080586652,0,25
+baseline_market,Baseline Market,FALSE,Greedy Revenue Maximization,1,161,650.7854080586652,0,28
+baseline_market,Baseline Market,FALSE,Conservative Inventory Preservation,1,145.25,666.5354080586652,0,37
+baseline_market,Baseline Market,FALSE,Inventory-Aware Pricing,1,116,695.7854080586651,0,9
+high_inventory_constraint,High Inventory Constraint,TRUE,Conservative Inventory Preservation,1,694,366.4437451059542,0.5,0
+high_inventory_constraint,High Inventory Constraint,TRUE,Greedy Revenue Maximization,1,308.75,536.6937451059541,0.625,0
+high_inventory_constraint,High Inventory Constraint,TRUE,Static Pricing,1,308.75,536.6937451059541,0.625,0
+high_inventory_constraint,High Inventory Constraint,TRUE,Inventory-Aware Pricing,1,439,556.4437451059541,0.5,0
+high_segment_heterogeneity,High Segment Heterogeneity,TRUE,Conservative Inventory Preservation,1,1662,1098.740417916769,0.3,0
+high_segment_heterogeneity,High Segment Heterogeneity,TRUE,Inventory-Aware Pricing,1,738.5,1782.240417916769,0.3,0
+high_segment_heterogeneity,High Segment Heterogeneity,TRUE,Static Pricing,1,540,1804.9203582143734,0.4,0
+high_segment_heterogeneity,High Segment Heterogeneity,TRUE,Greedy Revenue Maximization,1,540,1950.740417916769,0.4,0

@@ -1,0 +1,10 @@
+scenario_id,scenario,model,runs,mean_profit_regret,median_profit_regret,sd_profit_regret,mean_decision_regret,mean_observations_per_customer,win_rate
+baseline_market,Baseline Market,Naive Aggregate,1,16.149163121531657,16.149163121531657,0,12,8,1
+baseline_market,Baseline Market,Misspecified Linear,1,20.76297850422243,20.76297850422243,0,14.75,8,0
+baseline_market,Baseline Market,Hierarchical Bayesian,1,80.81808025270429,80.81808025270429,0,28.25,8,0
+high_inventory_constraint,High Inventory Constraint,Naive Aggregate,1,14.65028332562386,14.65028332562386,0,8,8,1
+high_inventory_constraint,High Inventory Constraint,Misspecified Linear,1,51.77068120668994,51.77068120668994,0,17.75,8,0
+high_inventory_constraint,High Inventory Constraint,Hierarchical Bayesian,1,96.1316022072946,96.1316022072946,0,25.25,8,0
+high_segment_heterogeneity,High Segment Heterogeneity,Misspecified Linear,1,12.793455543978155,12.793455543978155,0,2,10,1
+high_segment_heterogeneity,High Segment Heterogeneity,Naive Aggregate,1,111.220554877859,111.220554877859,0,13,10,0
+high_segment_heterogeneity,High Segment Heterogeneity,Hierarchical Bayesian,1,272.18188462129456,272.18188462129456,0,25.5,10,0

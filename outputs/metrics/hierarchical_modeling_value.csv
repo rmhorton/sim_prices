@@ -1,0 +1,4 @@
+scenario_id,scenario,runs,mean_regret_reduction_vs_naive,median_regret_reduction_vs_naive,mean_regret_reduction_vs_misspecified,median_regret_reduction_vs_misspecified
+baseline_market,Baseline Market,1,-64.66891713117263,-64.66891713117263,-60.05510174848186,-60.05510174848186
+high_inventory_constraint,High Inventory Constraint,1,-81.48131888167075,-81.48131888167075,-44.36092100060466,-44.36092100060466
+high_segment_heterogeneity,High Segment Heterogeneity,1,-160.96132974343556,-160.96132974343556,-259.3884290773164,-259.3884290773164

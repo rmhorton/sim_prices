@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-05-15T20:53:39-0700",
+  "scenario_file": "scenarios/high_inventory_constraint.yaml",
+  "random_seed": 2028,
+  "scenario": {
+    "name": "High Inventory Constraint",
+    "description": "Demand-rich market with tighter sell-through capacity.",
+    "market_size": 80,
+    "inventory_limits": {
+      "total": 45
+    },
+    "customer_segment_proportions": {
+      "Budget": 0.45,
+      "Mainstream": 0.4,
+      "Premium": 0.15
+    },
+    "price_elasticity_parameters": {
+      "Budget": {
+        "alpha_mean": 0.9,
+        "alpha_sd": 0.5,
+        "beta_mean": -0.8,
+        "beta_sd": 0.13
+      },
+      "Mainstream": {
+        "alpha_mean": 1.8,
+        "alpha_sd": 0.5,
+        "beta_mean": -0.42,
+        "beta_sd": 0.1
+      },
+      "Premium": {
+        "alpha_mean": 2.7,
+        "alpha_sd": 0.5,
+        "beta_mean": -0.14,
+        "beta_sd": 0.08
+      }
+    },
+    "noise_levels": {
+      "price_noise_sd": 0.25,
+      "purchase_noise_sd": 0.02
+    },
+    "simulation_horizon": 8,
+    "demand_shock_settings": {
+      "enabled": true,
+      "probability": 0.1,
+      "logit_shift_mean": -0.35,
+      "logit_shift_sd": 0.12
+    },
+    "promotional_effects": {
+      "enabled": true,
+      "probability": 0.3,
+      "logit_lift_mean": 0.35,
+      "logit_lift_sd": 0.12
+    },
+    "replenishment": {
+      "enabled": true,
+      "quantity": 10,
+      "interval": 4
+    },
+    "inventory_behavior": {
+      "enabled": true,
+      "scarcity_logit_lift": 0.55,
+      "abundance_logit_penalty": 0.1
+    },
+    "unit_cost": 5,
+    "price_grid": {
+      "min": 1,
+      "max": 35,
+      "by": 0.25
+    },
+    "offer_price_range": {
+      "min": 2,
+      "max": 30
+    },
+    "random_seed": 2028,
+    "lifetime_value": {
+      "Budget": {
+        "mean": 100,
+        "sd": 20
+      },
+      "Mainstream": {
+        "mean": 350,
+        "sd": 40
+      },
+      "Premium": {
+        "mean": 1200,
+        "sd": 150
+      }
+    }
+  },
+  "row_counts": {
+    "observed_data": 640,
+    "latent_truth": 80
+  },
+  "data_roles": {
+    "observed_data": "blind_analysis_input",
+    "latent_truth": "evaluation_only",
+    "oracle_decisions": "evaluation_only",
+    "scenario_metadata": "shared_configuration"
+  },
+  "observable_variables": ["customer_id", "offer_id", "offered_price", "promotion_active", "purchase"],
+  "latent_variables": ["customer_id", "latent_segment", "true_alpha", "true_beta", "true_willingness_to_pay", "lifetime_value"],
+  "evaluation_only_outputs": ["latent_truth.csv", "oracle_decisions.csv"]
+}

@@ -1,0 +1,5 @@
+policy,backend,status
+Static Pricing,R,active
+Inventory-Aware Pricing,R,active
+Greedy Revenue Maximization,R,active
+Conservative Inventory Preservation,R,active

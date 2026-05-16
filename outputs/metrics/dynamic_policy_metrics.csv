@@ -1,0 +1,13 @@
+scenario,scenario_id,seed,demand_shocks_enabled,policy,total_profit,total_sales,final_inventory,stockout_frequency,cumulative_regret,mean_price
+Baseline Market,baseline_market,2028,FALSE,Static Pricing,166.25,95,25,0,645.5354080586652,6.75
+Baseline Market,baseline_market,2028,FALSE,Greedy Revenue Maximization,161,92,28,0,650.7854080586652,6.75
+Baseline Market,baseline_market,2028,FALSE,Conservative Inventory Preservation,145.25,83,37,0,666.5354080586652,6.75
+Baseline Market,baseline_market,2028,FALSE,Inventory-Aware Pricing,116,111,9,0,695.7854080586651,6.09375
+High Inventory Constraint,high_inventory_constraint,2028,TRUE,Conservative Inventory Preservation,694,65,0,0.5,366.4437451059542,20.21875
+High Inventory Constraint,high_inventory_constraint,2028,TRUE,Greedy Revenue Maximization,308.75,65,0,0.625,536.6937451059541,9.75
+High Inventory Constraint,high_inventory_constraint,2028,TRUE,Static Pricing,308.75,65,0,0.625,536.6937451059541,9.75
+High Inventory Constraint,high_inventory_constraint,2028,TRUE,Inventory-Aware Pricing,439,65,0,0.5,556.4437451059541,12.53125
+High Segment Heterogeneity,high_segment_heterogeneity,2028,TRUE,Conservative Inventory Preservation,1662,120,0,0.3,1098.740417916769,19.7
+High Segment Heterogeneity,high_segment_heterogeneity,2028,TRUE,Inventory-Aware Pricing,738.5,120,0,0.3,1782.240417916769,11.425
+High Segment Heterogeneity,high_segment_heterogeneity,2028,TRUE,Static Pricing,540,120,0,0.4,1804.9203582143734,9.5
+High Segment Heterogeneity,high_segment_heterogeneity,2028,TRUE,Greedy Revenue Maximization,540,120,0,0.4,1950.740417916769,9.5

@@ -1,0 +1,10 @@
+scenario,scenario_id,seed,market_size,simulation_horizon,observations,observations_per_customer,model,oracle_optimal_price,realized_price,oracle_optimal_profit,realized_profit,profit_regret,decision_regret
+Baseline Market,baseline_market,2028,50,8,400,8,Naive Aggregate,35,23,101.47317600733315,85.3240128858015,16.149163121531657,12
+Baseline Market,baseline_market,2028,50,8,400,8,Hierarchical Bayesian,35,6.75,101.47317600733315,20.655095754628864,80.81808025270429,28.25
+Baseline Market,baseline_market,2028,50,8,400,8,Misspecified Linear,35,20.25,101.47317600733315,80.71019750311072,20.76297850422243,14.75
+High Inventory Constraint,high_inventory_constraint,2028,80,8,640,8,Naive Aggregate,35,27,169.08874902119084,154.43846569556698,14.65028332562386,8
+High Inventory Constraint,high_inventory_constraint,2028,80,8,640,8,Hierarchical Bayesian,35,9.75,169.08874902119084,72.95714681389623,96.1316022072946,25.25
+High Inventory Constraint,high_inventory_constraint,2028,80,8,640,8,Misspecified Linear,35,17.25,169.08874902119084,117.31806781450089,51.77068120668994,17.75
+High Segment Heterogeneity,high_segment_heterogeneity,2028,60,10,600,10,Naive Aggregate,35,22,355.82005970239555,244.59950482453655,111.220554877859,13
+High Segment Heterogeneity,high_segment_heterogeneity,2028,60,10,600,10,Hierarchical Bayesian,35,9.5,355.82005970239555,83.63817508110098,272.18188462129456,25.5
+High Segment Heterogeneity,high_segment_heterogeneity,2028,60,10,600,10,Misspecified Linear,35,33,355.82005970239555,343.0266041584174,12.793455543978155,2

@@ -1,0 +1,47 @@
+name: High Inventory Constraint
+description: Demand-rich market with tighter sell-through capacity.
+market_size: 80
+inventory_limits:
+  total: 45
+customer_segment_proportions:
+  Budget: 0.45
+  Mainstream: 0.40
+  Premium: 0.15
+price_elasticity_parameters:
+  Budget:
+    alpha_mean: 0.9
+    alpha_sd: 0.5
+    beta_mean: -0.80
+    beta_sd: 0.13
+  Mainstream:
+    alpha_mean: 1.8
+    alpha_sd: 0.5
+    beta_mean: -0.42
+    beta_sd: 0.10
+  Premium:
+    alpha_mean: 2.7
+    alpha_sd: 0.5
+    beta_mean: -0.14
+    beta_sd: 0.08
+noise_levels:
+  price_noise_sd: 0.25
+  purchase_noise_sd: 0.02
+simulation_horizon: 8
+demand_shock_settings:
+  enabled: true
+  probability: 0.10
+  logit_shift_mean: -0.35
+  logit_shift_sd: 0.12
+promotional_effects:
+  enabled: true
+  probability: 0.30
+  logit_lift_mean: 0.35
+  logit_lift_sd: 0.12
+replenishment:
+  enabled: true
+  quantity: 10
+  interval: 4
+inventory_behavior:
+  enabled: true
+  scarcity_logit_lift: 0.55
+  abundance_logit_penalty: 0.10

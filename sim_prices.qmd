@@ -30,10 +30,28 @@ library(tidyverse)
 library(rjags)
 library(coda)
 
-source("world_generation.R")
-source("analytical_models.R")
+source("R/load_scenario.R")
+source("generative_models/world_generation.R")
+source("generative_models/dynamic_inventory.R")
+source("analytical_models/model_fitting.R")
+source("pricing_policies/dynamic_pricing_policies.R")
 source("policy_evaluation.R")
+source("evaluation/oracle_evaluation.R")
+source("evaluation/dynamic_evaluation.R")
 source("plotting.R")
+```
+
+# Load Scenario
+
+```{r}
+scenario_file <- Sys.getenv(
+  "SCENARIO_FILE",
+  unset = "scenarios/baseline_market.yaml"
+)
+
+scenario <- load_scenario(scenario_file)
+
+scenario_summary(scenario)
 ```
 
 # Five-Layer Architecture
@@ -44,15 +62,25 @@ source("plotting.R")
 graph TD
 
 world["Generative World"]
+time["Time Evolution"]
+inventory["Inventory State"]
 observe["Observation Process"]
 analysis["Analytical Models"]
-decisions["Decision Policies"]
+decisions["Static Decision Policies"]
+dynamic_decisions["Dynamic Pricing Policies"]
 evaluation["Evaluation"]
+oracle["Oracle Evaluation"]
 
-world --> observe
+world --> time
+time --> inventory
+time --> observe
 observe --> analysis
 analysis --> decisions
+analysis --> dynamic_decisions
 decisions --> evaluation
+dynamic_decisions --> inventory
+inventory --> time
+evaluation --> oracle
 
 ```
 
@@ -66,32 +94,51 @@ The hidden world contains:
 - and inventory constraints.
 
 ```{r}
-N_customers <- 50
+unit_cost <- scenario$unit_cost
+inventory_limit <- scenario$inventory_limits$total
+price_grid <- scenario_price_grid(scenario)
+N_customers <- scenario$market_size
 
 customer_df <- generate_customer_world(
   N_customers = N_customers,
-  seed = 2028
+  seed = scenario$random_seed,
+  segment_proportions = scenario$customer_segment_proportions,
+  price_elasticity_parameters = scenario$price_elasticity_parameters,
+  lifetime_value_parameters = scenario$lifetime_value
+)
+
+true_demand_curve_df <- generate_true_demand_curve(
+  customer_df = customer_df,
+  price_grid = price_grid
 )
 ```
 
 # Simulate Purchase Opportunities
 
 ```{r}
-N_offers <- 8
+N_offers <- scenario$simulation_horizon
 
 offer_df <- simulate_purchase_opportunities(
   customer_df = customer_df,
-  N_offers = N_offers
+  N_offers = N_offers,
+  offer_price_range = scenario$offer_price_range,
+  inventory_limit = inventory_limit,
+  noise_levels = scenario$noise_levels,
+  demand_shock_settings = scenario$demand_shock_settings,
+  promotional_effects = scenario$promotional_effects
 )
 ```
 
 # Visualize True Demand Curves
 
 ```{r fig.width=11, fig.height=7}
-sample_customers <- sample(customer_df$customer_id,30)
+sample_customers <- sample(
+  customer_df$customer_id,
+  min(30, nrow(customer_df))
+)
 
 plot_true_demand_curves(
-  offer_df = offer_df,
+  offer_df = true_demand_curve_df,
   sample_customers = sample_customers
 )
 ```
@@ -107,6 +154,7 @@ The analyst does not observe:
 The analyst only observes:
 
 - price,
+- promotion status,
 - purchase outcome,
 - and customer ID.
 
@@ -119,8 +167,8 @@ analyst_df <- observe_analyst_data(offer_df)
 We compare:
 
 1. Naive aggregate model
-2. Overfit personalization
-3. Hierarchical Bayesian model
+2. Hierarchical Bayesian model
+3. Intentionally misspecified model
 
 # Naive Aggregate Model
 
@@ -155,6 +203,7 @@ alpha["αⱼ"]
 beta["βⱼ"]
 
 price["Price"]
+inventory["Inventory"]
 purchase["Purchase"]
 
 mu_alpha --> alpha
@@ -166,6 +215,7 @@ sigma_beta --> beta
 alpha --> purchase
 beta --> purchase
 price --> purchase
+inventory --> price
 ```
 
 # JAGS Model
@@ -177,7 +227,6 @@ model_string <- hierarchical_demand_model_string()
 ```{r}
 bayes_fit <- fit_hierarchical_bayesian_model(
   analyst_df = analyst_df,
-  N_customers = N_customers,
   model_string = model_string
 )
 
@@ -189,14 +238,38 @@ mu_alpha_post <- bayes_fit$mu_alpha_post
 mu_beta_post <- bayes_fit$mu_beta_post
 ```
 
+# Intentionally Misspecified Model
+
+This model intentionally ignores customer heterogeneity and uses a linear price-only demand surface.
+
+```{r}
+misspecified_fit <- fit_misspecified_model(analyst_df)
+```
+
+# Inferred Parameters
+
+```{r}
+inferred_parameters_df <- summarize_inferred_parameters(
+  analyst_df = analyst_df,
+  bayes_fit = bayes_fit,
+  misspecified_fit = misspecified_fit
+)
+
+parameter_comparison_df <- compare_inferred_parameters(
+  inferred_parameters_df = inferred_parameters_df,
+  customer_df = customer_df
+)
+
+parameter_comparison_df
+```
+
 # Layer 4 — Decision Policies
 
 The company seeks to maximize profit subject to inventory constraints.
 
 ```{r}
-unit_cost <- 5
-inventory_limit <- 120
-price_grid <- seq(1,35,by = 0.25)
+unit_cost
+inventory_limit
 ```
 
 # True Profit Curve
@@ -215,7 +288,7 @@ true_profit_df <- compute_true_profit_curve(
 ```{r}
 naive_profit_df <- compute_naive_profit_curve(
   naive_df = naive_df,
-  N_customers = N_customers,
+  N_customers = n_distinct(analyst_df$customer_id),
   unit_cost = unit_cost,
   inventory_limit = inventory_limit
 )
@@ -226,11 +299,31 @@ naive_profit_df <- compute_naive_profit_curve(
 ```{r}
 bayes_profit_df <- compute_bayes_profit_curve(
   price_grid = price_grid,
-  N_customers = N_customers,
+  N_customers = n_distinct(analyst_df$customer_id),
   mu_alpha_post = mu_alpha_post,
   mu_beta_post = mu_beta_post,
   unit_cost = unit_cost,
   inventory_limit = inventory_limit
+)
+```
+
+# Misspecified Profit Curve
+
+```{r}
+misspecified_profit_df <- compute_misspecified_profit_curve(
+  price_grid = price_grid,
+  N_customers = n_distinct(analyst_df$customer_id),
+  misspecified_fit = misspecified_fit,
+  unit_cost = unit_cost,
+  inventory_limit = inventory_limit
+)
+```
+
+```{r}
+model_profit_curves <- list(
+  "Naive Aggregate" = naive_profit_df,
+  "Hierarchical Bayesian" = bayes_profit_df,
+  "Misspecified Linear" = misspecified_profit_df
 )
 ```
 
@@ -240,10 +333,149 @@ bayes_profit_df <- compute_bayes_profit_curve(
 comparison_df <- compare_profit_curves(
   true_profit_df = true_profit_df,
   naive_profit_df = naive_profit_df,
-  bayes_profit_df = bayes_profit_df
+  bayes_profit_df = bayes_profit_df,
+  misspecified_profit_df = misspecified_profit_df
 )
 
 plot_profit_curves(comparison_df)
+```
+
+# Oracle Evaluation
+
+The oracle evaluation layer can inspect the true latent parameters, demand structure, and customer segments. Analytical models do not receive this information; it is used only to score decisions after each model has selected a price.
+
+```{r}
+oracle_truth_summary_df <- summarize_oracle_truth(customer_df)
+
+oracle_truth_summary_df
+```
+
+```{r}
+oracle_metrics_df <- compute_oracle_decision_metrics(
+  true_profit_df = true_profit_df,
+  model_profit_curves = model_profit_curves
+)
+
+oracle_metrics_df
+```
+
+```{r}
+calibration_metrics_df <- compute_calibration_metrics(
+  analyst_df = analyst_df,
+  offer_df = offer_df,
+  naive_df = naive_df,
+  bayes_fit = bayes_fit,
+  misspecified_fit = misspecified_fit
+)
+
+calibration_metrics_df
+```
+
+```{r}
+posterior_coverage_df <- compute_posterior_uncertainty_coverage(
+  bayes_fit = bayes_fit,
+  customer_df = customer_df
+)
+
+posterior_coverage_df
+```
+
+# Oracle Comparison Plots
+
+```{r fig.width=12, fig.height=8}
+revenue_curve_df <- prepare_revenue_curve_comparison(
+  true_profit_df = true_profit_df,
+  model_profit_curves = model_profit_curves
+)
+
+plot_revenue_curve_comparison(revenue_curve_df)
+```
+
+```{r fig.width=10, fig.height=6}
+plot_optimal_price_comparison(oracle_metrics_df)
+```
+
+```{r fig.width=10, fig.height=6}
+plot_regret_distributions(oracle_metrics_df)
+```
+
+# Dynamic Inventory-Constrained Pricing
+
+The dynamic simulation evolves inventory over time, lets policies update prices from the current inventory state, applies optional replenishment, and scores each policy against an oracle that can inspect the true demand structure.
+
+```{mermaid}
+%%| echo: false
+
+flowchart LR
+
+state["Inventory State t"]
+policy["Pricing Policy"]
+price["Price t"]
+customer["Customer Response"]
+shock["Demand Shock"]
+sales["Purchases / Sales"]
+replenish["Optional Replenishment"]
+next_state["Inventory State t + 1"]
+oracle_dynamic["Dynamic Oracle Benchmark"]
+
+state --> policy
+policy --> price
+price --> customer
+shock --> customer
+customer --> sales
+sales --> next_state
+replenish --> next_state
+next_state --> state
+state --> oracle_dynamic
+price --> oracle_dynamic
+
+```
+
+```{r}
+dynamic_policies <- build_dynamic_pricing_policies(
+  estimated_profit_df = bayes_profit_df,
+  static_price = select_greedy_price(bayes_profit_df)
+)
+
+dynamic_results_df <- simulate_dynamic_pricing_policies(
+  customer_df = customer_df,
+  policies = dynamic_policies,
+  horizon = scenario$simulation_horizon,
+  initial_inventory = inventory_limit,
+  price_grid = price_grid,
+  unit_cost = unit_cost,
+  demand_shock_settings = scenario$demand_shock_settings,
+  replenishment_settings = scenario$replenishment,
+  inventory_behavior = scenario$inventory_behavior,
+  seed = scenario$random_seed
+) %>%
+  compute_dynamic_regret(
+    customer_df = customer_df,
+    price_grid = price_grid,
+    unit_cost = unit_cost
+  )
+
+dynamic_policy_summary_df <- summarize_dynamic_policy_performance(
+  dynamic_results_df
+)
+
+dynamic_policy_summary_df
+```
+
+```{r fig.width=11, fig.height=6}
+plot_inventory_trajectory(dynamic_results_df)
+```
+
+```{r fig.width=11, fig.height=6}
+plot_dynamic_prices(dynamic_results_df)
+```
+
+```{r fig.width=11, fig.height=6}
+plot_cumulative_regret(dynamic_results_df)
+```
+
+```{r fig.width=10, fig.height=6}
+plot_stockout_frequency(dynamic_results_df)
 ```
 
 # Layer 5 — Evaluation
@@ -264,18 +496,68 @@ $$
 regret_results <- compute_regret(
   true_profit_df = true_profit_df,
   naive_profit_df = naive_profit_df,
-  bayes_profit_df = bayes_profit_df
+  bayes_profit_df = bayes_profit_df,
+  misspecified_profit_df = misspecified_profit_df
 )
 
 true_optimal_price <- regret_results$true_optimal_price
 naive_optimal_price <- regret_results$naive_optimal_price
 bayes_optimal_price <- regret_results$bayes_optimal_price
+misspecified_optimal_price <- regret_results$misspecified_optimal_price
 true_optimal_profit <- regret_results$true_optimal_profit
 naive_realized_profit <- regret_results$naive_realized_profit
 bayes_realized_profit <- regret_results$bayes_realized_profit
+misspecified_realized_profit <- regret_results$misspecified_realized_profit
 regret_df <- regret_results$regret_df
 
 regret_df
+```
+
+# Compare Decisions
+
+```{r}
+decision_summary_df <- compute_decision_summary(
+  true_profit_df = true_profit_df,
+  model_profit_curves = model_profit_curves
+)
+
+decision_summary_df
+```
+
+# Decision Quality Summary
+
+```{r}
+best_decision_models_df <- summarize_best_decision_models(
+  oracle_metrics_df
+) %>%
+  mutate(scenario = scenario$name, .before = model)
+
+best_decision_models_df
+```
+
+```{r}
+best_model <- best_decision_models_df$model[1]
+best_profit_regret <- best_decision_models_df$profit_regret[1]
+best_decision_regret <- best_decision_models_df$decision_regret[1]
+
+decision_quality_summary <- tibble(
+  scenario = scenario$name,
+  best_decision_model = best_model,
+  profit_regret = best_profit_regret,
+  decision_regret = best_decision_regret,
+  explanation = case_when(
+    best_model == "Hierarchical Bayesian" ~
+      "Partial pooling improves price choice when customer-level heterogeneity matters and sparse observations make fully pooled estimates unstable.",
+    best_model == "Naive Aggregate" ~
+      "The pooled model is competitive when aggregation error is smaller than posterior uncertainty and the optimal price is broad.",
+    best_model == "Misspecified Linear" ~
+      "The misspecified model can occasionally choose a reasonable price, but its decision quality is fragile because it ignores nonlinear demand and heterogeneity.",
+    TRUE ~
+      "Decision quality depends on how closely the estimated revenue curve preserves the oracle-optimal price region."
+  )
+)
+
+decision_quality_summary
 ```
 
 # Visualize Regret
@@ -303,6 +585,7 @@ This allows us to study:
 - and decision quality.
 
 The key insight is that analytical assumptions directly affect operational decisions.
+The oracle layer makes that comparison explicit: the best analytical model is the one that preserves high-profit decisions under the current scenario, even when its parameter estimates are imperfect.
 
 # Future Extensions
 
