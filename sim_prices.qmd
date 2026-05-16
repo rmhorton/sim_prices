@@ -11,9 +11,13 @@ execute:
   message: false
 ---
 
-# Overview
+# Introduction
 
-This document demonstrates a modular simulation framework for decision science. The simulation separates:
+This document presents a modular simulation framework for decision science. The goal is to make explicit the path from an unobserved world, through noisy operational evidence, into statistical inference, policy choice, and decision evaluation.
+
+In many applied systems, those pieces are bundled together into a single analytical pipeline. A model is fit, a decision is recommended, and performance is assessed, often without a clear distinction between what was true, what was observable, what was inferred, what was chosen, and what was ultimately evaluated. That conflation makes it difficult to diagnose failure. A model can recover plausible parameters and still recommend poor actions. A policy can appear profitable because it implicitly used information unavailable to a real analyst. Observed transactions can be a distorted trace of demand rather than demand itself.
+
+The framework below treats simulation as a decision-science architecture rather than as a single forecasting exercise. It separates:
 
 1. Generative world model
 2. Observation process
@@ -21,9 +25,19 @@ This document demonstrates a modular simulation framework for decision science. 
 4. Decision policies
 5. Evaluation metrics
 
-The goal is to show how different analytical assumptions affect business decisions.
+The running example is a pricing and inventory-constrained demand system, but the structure is intentionally more general. The same architecture can be used to study recommendation systems, adaptive experimentation, resource allocation, operational forecasting, targeting policies, and external model benchmarking. The central question is not only which model fits observed data, but which inferential and policy pipeline produces robust decisions under partial observability.
+
+# Motivation
+
+Real decision systems rarely observe the latent process they are trying to optimize. They observe logs, transactions, exposures, censored outcomes, delayed feedback, and operational traces. In a pricing system, observed purchases are shaped by who received an offer, what price was shown, whether inventory was available, whether a promotion was active, and whether demand was temporarily shifted by shocks. These observations are useful, but they are not identical to customer willingness-to-pay or true demand.
+
+This distinction matters because the object of inference is not necessarily the object of decision. A demand model may be statistically reasonable in regions where historical data are dense, yet unreliable near the prices that determine the optimal policy. A hierarchical model may improve decisions by stabilizing sparse customer-level evidence, even if it does not perfectly recover every latent parameter. A misspecified model may look adequate in-sample while producing high regret when its implied revenue curve is optimized.
+
+The simulation framework is therefore organized around decision quality. It supports controlled comparisons of analytical models and pricing policies under the same generated world, with an oracle evaluation layer reserved for post-hoc scoring. Analytical models operate only on observed data. Latent truth is retained by the simulator so that decision regret, calibration, posterior coverage, and policy robustness can be measured without leaking privileged information into the fitting process.
 
 # Load Packages
+
+The computational implementation is organized into small modules that correspond to the architecture described above. Scenario loading, world generation, analytical modeling, pricing policies, oracle evaluation, dynamic evaluation, and plotting are sourced separately so that each layer can be extended without rewriting the document.
 
 ```{r}
 library(tidyverse)
@@ -43,6 +57,8 @@ source("plotting.R")
 
 # Load Scenario
 
+All simulation parameters enter through an external scenario file. This keeps the methodological document separate from the experimental configuration and allows the same computational workflow to be reused across markets, inventory regimes, heterogeneity settings, and shock processes.
+
 ```{r}
 scenario_file <- Sys.getenv(
   "SCENARIO_FILE",
@@ -54,7 +70,23 @@ scenario <- load_scenario(scenario_file)
 scenario_summary(scenario)
 ```
 
+## Scenario Interpretation
+
+The scenario summary identifies the experimental conditions under which the rest of the document should be read. Market size, inventory limits, horizon length, segment mix, and shock settings define the operating environment, so changes to the scenario can alter which model or policy appears strongest. These values are not empirical claims; they are controlled assumptions used to stress different parts of the decision pipeline.
+
 # Five-Layer Architecture
+
+The architecture is epistemic: each layer has a different relationship to truth, observability, and action. The generative layer defines what is true. The observation layer defines what becomes visible. The analytical layer constructs beliefs from that limited evidence. The policy layer turns beliefs into decisions. The evaluation layer scores the consequences of those decisions against the simulated ground truth and oracle benchmarks.
+
+| Layer | Role in the system | Information available |
+|---|---|---|
+| Generative World | Defines the latent data-generating process | Full latent state, true demand, true segments, inventory dynamics |
+| Observation Process | Filters latent reality into analyst-visible records | Operational traces such as price, promotion status, and fulfilled purchase |
+| Analytical Models | Infer structure from observed data | Observed data only; no latent truth |
+| Decision Policies | Convert inferred beliefs into prices or actions | Estimated demand/profit surfaces and current policy state |
+| Evaluation | Measures regret, calibration, and robustness | Evaluation-only access to truth and oracle decisions |
+
+The diagram below preserves those boundaries while also representing the dynamic inventory loop used later in the document. Inventory evolves over time, affects future pricing opportunities, and creates feedback between policy choices and subsequent observations.
 
 ```{mermaid}
 %%| echo: false
@@ -84,7 +116,11 @@ evaluation --> oracle
 
 ```
 
+The rest of the document follows this architecture in order. It first constructs a latent world, then filters that world into observed analyst data, fits several models to the observed data, converts those models into decisions, and finally evaluates the decisions against oracle benchmarks.
+
 # Layer 1 — Generative World
+
+The generative world is the part of the simulation that knows the true market structure. It creates the latent customer population, assigns hidden heterogeneity, defines true demand response, and establishes operational constraints such as inventory limits and demand shocks. This layer is deliberately richer than the data later given to analytical models.
 
 The hidden world contains:
 
@@ -92,6 +128,8 @@ The hidden world contains:
 - heterogeneous price sensitivity,
 - lifetime value,
 - and inventory constraints.
+
+These variables are not treated as analyst-visible features. They are retained so that the framework can later evaluate whether models and policies performed well relative to the world that actually generated the outcomes. This distinction is central to the design: the simulator may know the truth, but the analyst-facing models do not.
 
 ```{r}
 unit_cost <- scenario$unit_cost
@@ -113,7 +151,11 @@ true_demand_curve_df <- generate_true_demand_curve(
 )
 ```
 
-# Simulate Purchase Opportunities
+The generated customer table and true demand curve define the latent benchmark for the run. They are not yet the analyst-facing dataset; they are the simulated reality from which observations will be produced.
+
+## Simulate Purchase Opportunities
+
+The purchase-opportunity simulation converts the latent world into a sequence of customer offers. At this stage, the generative process can apply price variation, inventory constraints, demand shocks, promotional effects, and noise. The result is still richer than what an analyst will ultimately observe, because it includes both the outcome and the hidden quantities needed for evaluation.
 
 ```{r}
 N_offers <- scenario$simulation_horizon
@@ -129,7 +171,11 @@ offer_df <- simulate_purchase_opportunities(
 )
 ```
 
-# Visualize True Demand Curves
+At this point the simulation has produced both observable outcomes and hidden diagnostic quantities. The next step deliberately discards the latter for model fitting, preserving a realistic separation between operational data and latent truth.
+
+## Visualize True Demand Curves
+
+The true demand curves shown here are diagnostic views of the simulated world. They are useful for understanding the structure of the experiment, but they should be interpreted as oracle-visible information. They are not passed to the analytical models used below.
 
 ```{r fig.width=11, fig.height=7}
 sample_customers <- sample(
@@ -143,7 +189,30 @@ plot_true_demand_curves(
 )
 ```
 
+### Demand-Curve Interpretation
+
+This figure shows the true latent demand response for a sample of customers. The variation across curves arises from the generative assumptions about segment membership and heterogeneous price sensitivity. The general lesson is that a single observed purchase rate can hide many different underlying response patterns, which makes downstream inference and pricing sensitive to how heterogeneity is modeled.
+
+The analysis now moves from the oracle-visible world to the analyst-visible world. This transition is where the simulation becomes a test of inference under partial observability rather than a direct optimization of known demand.
+
 # Layer 2 — Observation Process
+
+The observation process defines the boundary between the simulator and the analyst. It takes the richer generative output and restricts it to the fields that would plausibly be visible in an operational dataset. This is where the framework enforces partial observability.
+
+Organizations do not observe latent reality directly. They observe records produced by business processes: offers that were actually shown, transactions that were logged, purchases that were fulfilled, inventory states that were recorded, and outcomes that arrived within the available measurement window. The resulting dataset is therefore a mediated trace of the underlying world rather than a transparent view of demand, preference, or willingness-to-pay.
+
+Several observational distortions can enter at this layer:
+
+- selection bias, when some customers, prices, regions, or time periods are more likely to be exposed than others;
+- censoring, when demand exists but cannot be observed because inventory is depleted, an offer is unavailable, or a transaction cannot be fulfilled;
+- missingness, when events fail to appear in the data because of logging gaps, delayed ingestion, incomplete identifiers, or measurement failures;
+- survivorship bias, when only customers or products that remain active are visible to the analyst;
+- exposure processes, when the system observes responses only for actions that were actually taken;
+- inventory constraints, when observed purchases understate unconstrained demand;
+- delayed observations, when outcomes arrive after the decision that generated them;
+- and operational logging artifacts, when recorded variables reflect platform instrumentation rather than the economic process itself.
+
+These distortions matter because they propagate forward. Analytical models infer structure from observed records, not from the latent world. If exposure is selective, a model may learn the response of the exposed population rather than the full market. If stockouts censor purchases, a demand model may mistake constrained sales for weak demand. If feedback is delayed or missing, policy evaluation can reward actions whose costs have not yet appeared. Downstream pricing and inventory policies then optimize against those inferred beliefs, so observational bias can become decision regret.
 
 The analyst does not observe:
 
@@ -158,11 +227,23 @@ The analyst only observes:
 - purchase outcome,
 - and customer ID.
 
+This separation protects against information leakage. Analytical models are fit only on `analyst_df`, which excludes true segment membership, true willingness-to-pay, lifetime value, and customer-level demand parameters. Evaluation code can later join back to latent truth, but model fitting cannot.
+
+The design intentionally preserves that boundary. The observation layer is not a convenience wrapper around the full simulated data; it is a formal information filter. Anything excluded here is unavailable to inference and policy during the simulation run, even though it remains available to the oracle evaluation layer after decisions have been produced.
+
 ```{r}
 analyst_df <- observe_analyst_data(offer_df)
 ```
 
+The resulting analyst dataset is the sole input to the modeling layer. From this point forward, analytical models must reconstruct decision-relevant structure from incomplete evidence.
+
 # Layer 3 — Analytical Models
+
+The analytical layer contains competing approximations to the hidden demand structure. Each model receives the same observed data but encodes different assumptions about pooling, heterogeneity, functional form, and uncertainty.
+
+Those assumptions determine what kinds of behavior a model can represent. A fully pooled model treats observations as evidence about a common market-level response. A highly individualized model treats each customer history as potentially distinct, but can become unstable when individual histories are sparse. A hierarchical model sits between these extremes by allowing customer-level variation while sharing information through population-level structure. A misspecified model intentionally omits part of the true structure so that the consequences of simplification can be measured directly.
+
+No model is universally preferred across all scenarios. The appropriate model depends on the amount of data, the strength of heterogeneity, the severity of observational distortion, the shape of the decision surface, and the cost of acting on the wrong extrapolation. The framework therefore evaluates analytical models through their downstream decisions rather than through parameter recovery alone.
 
 We compare:
 
@@ -170,7 +251,15 @@ We compare:
 2. Hierarchical Bayesian model
 3. Intentionally misspecified model
 
-# Naive Aggregate Model
+The purpose of comparing these models is not simply to rank statistical fit. The more important question is how their assumptions propagate into downstream price recommendations and regret. A model that recovers average demand reasonably well may still distort the shape of the profit curve near the decision boundary. Conversely, a model with imperfect parameter recovery may still support good decisions if it preserves the high-value region of the action space.
+
+## Naive Aggregate Model
+
+The naive aggregate model pools across customers and ignores latent heterogeneity. It provides a useful baseline because it reflects a common operational simplification: estimate a single average response curve and optimize against it.
+
+The key assumption is exchangeability at the market level: after conditioning on price, individual customer differences are treated as noise around a common response. This can be effective when heterogeneity is weak, data are sparse, or the decision problem is dominated by broad aggregate demand. It can be misleading when distinct segments respond differently, when the observed mix of customers changes across prices, or when the optimal policy depends on tail behavior rather than average behavior.
+
+As a decision input, the naive model can represent smooth aggregate conversion patterns, but it cannot represent latent segment-specific elasticity, customer-level willingness-to-pay, or shrinkage between individual and population effects. Its downstream policy recommendations therefore depend heavily on whether averaging preserves the location of the high-profit region.
 
 ```{r}
 naive_df <- fit_naive_aggregate_model(analyst_df)
@@ -180,13 +269,35 @@ naive_df <- fit_naive_aggregate_model(analyst_df)
 plot_naive_demand_curve(naive_df)
 ```
 
-# Overfit Personalization
+### Naive Demand Interpretation
+
+This figure summarizes demand after pooling across customers. Its smooth aggregate pattern is useful as a baseline, but it is produced by averaging over latent segments, individual price sensitivity, inventory effects, and observational noise. The structural lesson is that aggregate curves can be decision-relevant while still obscuring the mechanisms that generated them.
+
+## Overfit Personalization
+
+The customer-level conversion summary is intentionally descriptive rather than a full decision model. It illustrates how sparse individual histories can appear highly variable, motivating partial pooling and structured uncertainty in richer models.
+
+This section highlights the opposite risk from full pooling. If every customer is treated as entirely independent, the model may mistake random variation for persistent heterogeneity. With few observations per customer, apparent differences in conversion can be driven by exposure, price assignment, inventory censoring, or noise. A purely personalized policy built on those unstable summaries can overreact to weak evidence.
+
+The tension between aggregate pooling and individual overfitting is one of the main motivations for hierarchical modeling. The decision problem usually requires enough flexibility to represent heterogeneous behavior, but enough regularization to avoid optimizing against noise.
 
 ```{r}
 customer_summary <- summarize_customer_conversion(analyst_df)
 ```
 
-# Hierarchical Bayesian Model
+### Personalization Interpretation
+
+The customer conversion summary exposes how sparse customer histories can vary even when customers are generated from structured latent populations. Apparent individual differences may reflect true heterogeneity, random exposure, inventory censoring, or noise. This is why personalization without regularization can be fragile, and why partial pooling is often valuable in sparse decision settings.
+
+## Hierarchical Bayesian Model
+
+The hierarchical Bayesian model represents the analytical layer’s attempt to share information across customers while still allowing customer-level response heterogeneity. In decision-science terms, the model is valuable not only because it estimates parameters, but because it produces a regularized demand surface from incomplete observations.
+
+Hierarchical Bayesian models formalize partial pooling. Customer-level parameters are allowed to vary, but they are drawn from population-level distributions. Sparse customer histories are pulled toward the population mean, while customers with stronger evidence can deviate more. This shrinkage is not merely a statistical convenience; it is a decision-relevant mechanism for balancing noise against heterogeneity.
+
+The model assumes that individual response parameters are related through a shared structure. That assumption can improve stability when observations are limited, but it can also smooth away real differences if the population structure is too simple. The posterior distribution represents uncertainty about the shared response surface, and that uncertainty affects both estimated profit curves and the prices selected from them.
+
+The practical question is not whether the hierarchical model perfectly recovers every latent customer parameter. The question is whether its shrinkage and uncertainty structure preserve enough of the decision-relevant demand shape to support robust pricing under the current scenario.
 
 ```{mermaid}
 %%| echo: false
@@ -218,7 +329,9 @@ price --> purchase
 inventory --> price
 ```
 
-# JAGS Model
+## JAGS Model
+
+The JAGS implementation below encodes the hierarchical demand model used in this comparison. The computational workflow remains part of the analytical layer: it consumes only the observed analyst data and returns posterior summaries used later by the decision layer.
 
 ```{r}
 model_string <- hierarchical_demand_model_string()
@@ -238,15 +351,23 @@ mu_alpha_post <- bayes_fit$mu_alpha_post
 mu_beta_post <- bayes_fit$mu_beta_post
 ```
 
-# Intentionally Misspecified Model
+## Intentionally Misspecified Model
 
-This model intentionally ignores customer heterogeneity and uses a linear price-only demand surface.
+This model intentionally ignores customer heterogeneity and uses a linear price-only demand surface. It is included to make misspecification explicit rather than accidental. By comparing it with the pooled and hierarchical alternatives, the framework can measure how much decision quality is lost when important latent structure is omitted.
+
+Misspecification is not an edge case; it is a normal feature of applied modeling. Real analytical systems routinely omit variables, simplify nonlinear relationships, assume constant effects, or fit models in regions where historical observations are sparse. The misspecified model represents behavior that is easy to estimate and explain, but structurally unable to express some features of the generative world.
+
+This kind of model can still perform well in scenarios where the omitted structure has little effect on the optimal decision, or where the profit curve is flat enough that many prices are nearly equivalent. It can perform poorly when extrapolation matters, when heterogeneity is strong, or when the omitted variable shifts the location of the optimum. The point is not to declare misspecified models unusable, but to measure when their simplifications become operationally costly.
 
 ```{r}
 misspecified_fit <- fit_misspecified_model(analyst_df)
 ```
 
-# Inferred Parameters
+## Inferred Parameters
+
+Parameter summaries are useful diagnostics, but they are not the final objective. The same parameter error can have different operational consequences depending on where it occurs in the price grid and how sharply the true profit curve changes near the optimum.
+
+For that reason, inferred parameters should be read alongside decision metrics. A model may have biased parameters but still choose a near-optimal price if the implied profit curve is accurate in the relevant region. Conversely, a model may look plausible on average while extrapolating poorly at candidate prices that drive the policy choice. The downstream evaluation sections therefore compare inferred parameters, estimated decisions, oracle decisions, regret, calibration, and posterior coverage as related but distinct diagnostics.
 
 ```{r}
 inferred_parameters_df <- summarize_inferred_parameters(
@@ -263,7 +384,17 @@ parameter_comparison_df <- compare_inferred_parameters(
 parameter_comparison_df
 ```
 
+### Parameter-Recovery Interpretation
+
+This table compares inferred parameters with ground truth for diagnostic purposes. The important question is not whether every parameter is recovered exactly, but whether parameter errors occur in ways that distort the decisions produced by each model. Parameter recovery, calibration, and regret are complementary diagnostics rather than substitutes for one another.
+
+Having produced several competing representations of demand, the framework now asks how those representations would be used. The next layer converts inferred beliefs into explicit pricing decisions and profit surfaces.
+
 # Layer 4 — Decision Policies
+
+The policy layer converts inferred beliefs into operational choices. In this document, the action is a price, and the objective is profit under inventory constraints. More generally, this layer could represent a treatment assignment rule, a recommendation policy, an allocation decision, or any other action selected from imperfect beliefs about a partially observed system.
+
+Inference alone does not create value. Value is created when inferred structure is used to choose actions. For that reason, the simulation compares profit curves and dynamic policies rather than stopping at parameter recovery.
 
 The company seeks to maximize profit subject to inventory constraints.
 
@@ -272,7 +403,9 @@ unit_cost
 inventory_limit
 ```
 
-# True Profit Curve
+## True Profit Curve
+
+The true profit curve is an oracle reference derived from the latent generative world. It is not available to the analytical models, but it establishes the benchmark against which estimated decision rules can be evaluated.
 
 ```{r}
 true_profit_df <- compute_true_profit_curve(
@@ -283,7 +416,9 @@ true_profit_df <- compute_true_profit_curve(
 )
 ```
 
-# Naive Profit Curve
+## Naive Profit Curve
+
+The naive profit curve translates the pooled analytical model into an estimated decision surface. Any distortion introduced by aggregation now becomes operationally relevant because the policy will optimize over this curve.
 
 ```{r}
 naive_profit_df <- compute_naive_profit_curve(
@@ -294,7 +429,9 @@ naive_profit_df <- compute_naive_profit_curve(
 )
 ```
 
-# Hierarchical Bayesian Profit Curve
+## Hierarchical Bayesian Profit Curve
+
+The Bayesian profit curve uses the posterior summaries from the hierarchical model to estimate demand and profit across candidate prices. Its decision quality depends on whether partial pooling preserves the true high-profit region under the current scenario.
 
 ```{r}
 bayes_profit_df <- compute_bayes_profit_curve(
@@ -307,7 +444,9 @@ bayes_profit_df <- compute_bayes_profit_curve(
 )
 ```
 
-# Misspecified Profit Curve
+## Misspecified Profit Curve
+
+The misspecified profit curve shows how a deliberately simplified functional form translates into decisions. This provides a stress test for the pipeline: a model can be easy to fit and interpret while still producing costly recommendations.
 
 ```{r}
 misspecified_profit_df <- compute_misspecified_profit_curve(
@@ -327,7 +466,11 @@ model_profit_curves <- list(
 )
 ```
 
-# Compare Profit Curves
+These model-specific profit curves are the bridge between inference and action. They summarize what each analytical model would imply if used as the basis for a pricing decision.
+
+## Compare Profit Curves
+
+Comparing profit curves moves the analysis from model space into decision space. The relevant question is not only whether a curve is close everywhere, but whether its maximum occurs near the oracle-optimal price and whether the surrounding region is robust to uncertainty.
 
 ```{r fig.width=12, fig.height=8}
 comparison_df <- compare_profit_curves(
@@ -340,15 +483,39 @@ comparison_df <- compare_profit_curves(
 plot_profit_curves(comparison_df)
 ```
 
+### Profit-Curve Interpretation
+
+The plotted curves should be read as decision surfaces, not only as model diagnostics. A model can be close to the true curve in average error while still placing its maximum at a different price. When the estimated optimum moves, the policy induced by that model changes. This is why small modeling differences can produce large policy differences: optimization amplifies errors near the decision boundary, especially when the true profit curve is steep or when inventory constraints make some regions of the action space much more costly than others.
+
+Static profit-curve comparison shows how model assumptions affect a one-shot decision. The next section introduces the oracle benchmark that turns those differences into decision-quality metrics.
+
 # Oracle Evaluation
 
 The oracle evaluation layer can inspect the true latent parameters, demand structure, and customer segments. Analytical models do not receive this information; it is used only to score decisions after each model has selected a price.
+
+This creates a clean separation between blind analysis and evaluation. The models act under the same information constraints as an external analyst, while the evaluator can quantify regret, calibration, and coverage relative to the simulated ground truth.
+
+An oracle decision is the action that would be chosen if the decision maker had access to the true latent world and true demand structure. It is not a feasible analytical model; it is a benchmark. The purpose of the oracle is to define the best attainable decision under the simulated conditions so that the cost of imperfect information and imperfect modeling can be measured.
+
+The evaluation loop is:
+
+1. the latent world generates customers, demand, purchases, and inventory outcomes;
+2. analytical models infer beliefs from observed data only;
+3. decision policies choose prices from those inferred beliefs;
+4. the selected actions are evaluated against the true generative world;
+5. regret measures the value lost relative to the oracle decision.
+
+This loop separates prediction from utility. Predictive accuracy is useful, but insufficient: the economic question is whether the inferred beliefs lead to good actions.
 
 ```{r}
 oracle_truth_summary_df <- summarize_oracle_truth(customer_df)
 
 oracle_truth_summary_df
 ```
+
+## Oracle-Truth Interpretation
+
+The oracle truth summary describes the latent structure used for evaluation. It should be interpreted as diagnostic context for the simulation, not as information available to the analytical models.
 
 ```{r}
 oracle_metrics_df <- compute_oracle_decision_metrics(
@@ -358,6 +525,10 @@ oracle_metrics_df <- compute_oracle_decision_metrics(
 
 oracle_metrics_df
 ```
+
+## Oracle-Metric Interpretation
+
+The oracle metrics translate modeling differences into operational consequences. The realized price is the action implied by an estimated profit curve. Profit regret is the economic opportunity cost of that action: the gap between the profit achieved by the model-selected decision and the profit that would have been achieved by the oracle-selected decision. Decision regret measures the distance between the selected price and the oracle price, which is useful because two policies can have similar profit but very different action choices.
 
 ```{r}
 calibration_metrics_df <- compute_calibration_metrics(
@@ -371,6 +542,10 @@ calibration_metrics_df <- compute_calibration_metrics(
 calibration_metrics_df
 ```
 
+## Calibration Interpretation
+
+Calibration metrics evaluate whether predicted probabilities align with observed outcomes and oracle probabilities. These metrics are important, but they do not replace regret. A model can be well calibrated over the observed data distribution while still misranking candidate actions in the region where the policy optimizes. Conversely, a model with imperfect calibration can sometimes choose a robust price if its decision-relevant ordering of alternatives is approximately correct.
+
 ```{r}
 posterior_coverage_df <- compute_posterior_uncertainty_coverage(
   bayes_fit = bayes_fit,
@@ -380,7 +555,13 @@ posterior_coverage_df <- compute_posterior_uncertainty_coverage(
 posterior_coverage_df
 ```
 
-# Oracle Comparison Plots
+## Posterior-Coverage Interpretation
+
+Posterior coverage evaluates whether the uncertainty intervals from the Bayesian model contain the corresponding ground-truth population quantities. This is an inferential diagnostic rather than a direct utility measure. Coverage can help explain why a model behaves cautiously or aggressively, but the final decision-science question remains whether uncertainty is translated into better actions.
+
+## Oracle Comparison Plots
+
+The oracle comparison plots make the decision consequences visible. They compare true and estimated revenue structure, show how far estimated optima move away from the true optimum, and summarize regret by analytical model.
 
 ```{r fig.width=12, fig.height=8}
 revenue_curve_df <- prepare_revenue_curve_comparison(
@@ -391,17 +572,33 @@ revenue_curve_df <- prepare_revenue_curve_comparison(
 plot_revenue_curve_comparison(revenue_curve_df)
 ```
 
+### Revenue-Curve Interpretation
+
+The revenue-curve comparison shows where the estimated decision surfaces agree or diverge from the true surface. Disagreement near low-value prices may have little operational impact. Disagreement near the maximum can change the selected price and create substantial opportunity cost.
+
 ```{r fig.width=10, fig.height=6}
 plot_optimal_price_comparison(oracle_metrics_df)
 ```
+
+### Optimal-Price Interpretation
+
+The optimal-price comparison focuses directly on action choice. This is often more decision-relevant than global curve fit: the policy ultimately implements one selected price, not an entire estimated curve.
 
 ```{r fig.width=10, fig.height=6}
 plot_regret_distributions(oracle_metrics_df)
 ```
 
+### Oracle-Regret Interpretation
+
+The regret plot summarizes the downstream utility loss by analytical model. It should be interpreted as a scenario-specific result rather than a universal ranking. Different market sizes, demand shocks, inventory limits, sparsity levels, and segment heterogeneity can change which modeling assumptions are most valuable.
+
+The same principle applies when pricing is not a single decision but a sequence of state-dependent decisions. Inventory creates a feedback loop: actions today change the feasible actions and opportunity costs tomorrow.
+
 # Dynamic Inventory-Constrained Pricing
 
-The dynamic simulation evolves inventory over time, lets policies update prices from the current inventory state, applies optional replenishment, and scores each policy against an oracle that can inspect the true demand structure.
+The dynamic simulation extends the policy layer from a single price choice to a time-stepped decision process. Inventory evolves over time, purchases deplete stock, optional replenishment can restore capacity, and demand shocks can alter the environment between periods.
+
+This section evaluates policy robustness rather than static optimality alone. A greedy policy may perform well when inventory is ample, but stock out too quickly when demand is high. A conservative policy may preserve inventory, but sacrifice near-term revenue. An inventory-aware policy attempts to use state information to balance these tradeoffs. As before, the policy functions operate through modular interfaces; the Quarto document invokes them rather than embedding business logic directly.
 
 ```{mermaid}
 %%| echo: false
@@ -462,25 +659,53 @@ dynamic_policy_summary_df <- summarize_dynamic_policy_performance(
 dynamic_policy_summary_df
 ```
 
+## Dynamic-Policy Interpretation
+
+The dynamic policy summary evaluates policies as sequential decision rules rather than one-time optimizers. Total profit captures realized utility, stockout frequency captures operational service risk, final inventory captures preservation or underuse of scarce capacity, and cumulative regret captures the opportunity cost accumulated over the horizon. These metrics can point in different directions, which is why policy comparison should be read as a tradeoff analysis rather than a single-score ranking.
+
 ```{r fig.width=11, fig.height=6}
 plot_inventory_trajectory(dynamic_results_df)
 ```
+
+## Inventory-Trajectory Interpretation
+
+Inventory trajectories show how policy choices consume or preserve operational capacity. A policy that produces high early sales may also create future scarcity; a policy that preserves stock may leave profitable demand unserved.
 
 ```{r fig.width=11, fig.height=6}
 plot_dynamic_prices(dynamic_results_df)
 ```
 
+## Dynamic-Price Interpretation
+
+Dynamic price paths reveal how each policy responds to state. Stable prices indicate static or greedy behavior, while state-dependent changes indicate attempts to manage scarcity, demand shocks, or the remaining horizon.
+
 ```{r fig.width=11, fig.height=6}
 plot_cumulative_regret(dynamic_results_df)
 ```
+
+## Cumulative-Regret Interpretation
+
+Cumulative regret makes the opportunity cost of sequential decisions visible over time. Early mistakes can compound when they deplete inventory, shift later policy options, or leave too little time to recover.
 
 ```{r fig.width=10, fig.height=6}
 plot_stockout_frequency(dynamic_results_df)
 ```
 
+## Stockout Interpretation
+
+Stockout frequency connects decision quality to operational reliability. In inventory-constrained systems, high revenue can be achieved by selling out quickly, but that may be undesirable if it sacrifices later high-value demand or creates service failures.
+
+The dynamic results broaden the evaluation from a single estimated optimum to a policy trajectory. The final evaluation section consolidates the decision-quality view through regret and explicit comparisons with the oracle benchmark.
+
 # Layer 5 — Evaluation
 
+The evaluation layer measures the consequences of inference and policy choices. It is intentionally downstream of model fitting: first the models infer from observed data, then policies choose actions from those inferred beliefs, and only then does the framework compare those actions with the oracle benchmark.
+
+Regret is the central decision-quality metric. It measures the value lost because the system acted with incomplete observations, imperfect model assumptions, or constrained policy logic.
+
 We evaluate decisions using regret.
+
+Operationally, regret compares two utilities evaluated in the same true world: the utility from the action chosen by an analytical model or policy, and the utility from the oracle action. Economically, it is an opportunity cost. It answers the question: how much value did the organization leave on the table because it acted on an imperfect representation of demand?
 
 $$
 \text{Regret}
@@ -490,7 +715,7 @@ $$
 \Pi(p^*_{estimated})
 $$
 
-# Compute Regret
+## Compute Regret
 
 ```{r}
 regret_results <- compute_regret(
@@ -513,7 +738,11 @@ regret_df <- regret_results$regret_df
 regret_df
 ```
 
-# Compare Decisions
+### Regret-Table Interpretation
+
+The regret table should be interpreted as the realized cost of model-induced decisions under the current scenario. A lower-regret model is not necessarily more accurate in every statistical sense; it is the model whose induced action preserved more downstream utility relative to the oracle. This distinction is central to decision science: inference is evaluated by the quality of the decisions it supports.
+
+## Compare Decisions
 
 ```{r}
 decision_summary_df <- compute_decision_summary(
@@ -524,7 +753,11 @@ decision_summary_df <- compute_decision_summary(
 decision_summary_df
 ```
 
-# Decision Quality Summary
+### Decision-Comparison Interpretation
+
+The decision comparison table separates chosen actions from realized outcomes. This helps identify whether regret is driven mainly by selecting a price far from the oracle action, or by selecting a different price that nevertheless lies in a relatively flat high-profit region. In many operational settings, decision robustness matters as much as exact optimality.
+
+## Decision Quality Summary
 
 ```{r}
 best_decision_models_df <- summarize_best_decision_models(
@@ -534,6 +767,10 @@ best_decision_models_df <- summarize_best_decision_models(
 
 best_decision_models_df
 ```
+
+### Best-Decision Interpretation
+
+This ranking summarizes decision quality for the current scenario. It should not be read as a universal model ordering. Instead, it identifies which modeling assumptions produced the least opportunity cost under this particular combination of latent heterogeneity, observation process, inventory constraints, and demand shocks.
 
 ```{r}
 best_model <- best_decision_models_df$model[1]
@@ -560,15 +797,23 @@ decision_quality_summary <- tibble(
 decision_quality_summary
 ```
 
-# Visualize Regret
+### Decision-Quality Interpretation
+
+The narrative summary connects model behavior to policy consequences. Its purpose is to make the evaluation operational: the best analytical model is the one that supports high-utility decisions under the scenario, not necessarily the one with the most appealing parameter estimates.
+
+## Visualize Regret
 
 ```{r fig.width=10, fig.height=6}
 plot_regret(regret_df)
 ```
 
+### Regret-Plot Interpretation
+
+The regret visualization provides a compact view of opportunity cost. Large differences between bars indicate that modeling assumptions changed the implemented decision enough to matter economically. Small differences suggest that the decision surface may be robust to the compared assumptions, even if the models differ statistically.
+
 # Interpretation
 
-This framework separates:
+The framework is designed to keep the main causal chain of a decision system visible. It separates:
 
 - the hidden world,
 - the observation process,
@@ -576,7 +821,7 @@ This framework separates:
 - operational decisions,
 - and evaluation metrics.
 
-This allows us to study:
+That separation makes it possible to study:
 
 - omitted-variable bias,
 - aggregation bias,
@@ -584,12 +829,13 @@ This allows us to study:
 - partial pooling,
 - and decision quality.
 
-The key insight is that analytical assumptions directly affect operational decisions.
-The oracle layer makes that comparison explicit: the best analytical model is the one that preserves high-profit decisions under the current scenario, even when its parameter estimates are imperfect.
+The key insight is that analytical assumptions directly affect operational decisions. The observation layer determines what evidence is available. The analytical layer determines how that evidence is summarized. The policy layer determines how inferred beliefs become actions. The evaluation layer determines whether those actions preserved value in the true simulated world.
+
+The oracle layer makes that comparison explicit: the best analytical model in a given scenario is the one that preserves high-profit decisions under the information constraints of that scenario, even when its parameter estimates are imperfect. Because the simulation is stochastic and scenario-driven, individual outputs should be interpreted as structured experimental results rather than empirical facts. The value of the framework lies in repeating these comparisons across assumptions, seeds, and policies to understand which conclusions are robust.
 
 # Future Extensions
 
-Possible extensions include:
+Possible extensions build naturally on the same modular boundaries:
 
 - dynamic pricing,
 - Thompson sampling,
@@ -599,4 +845,4 @@ Possible extensions include:
 - customer churn,
 - and causal confounding.
 
-The modular architecture allows each component of the simulation to be independently modified and evaluated.
+Additional analytical backends, such as Stan or Python-based workflows, can be introduced at the analytical layer as long as they consume the same observed data interface and return decision-relevant summaries. New policies can be evaluated against the same oracle benchmarks. New world models can alter the latent structure without changing the evaluation contract. The modular architecture allows each component of the simulation to be independently modified and evaluated while preserving the separation between truth, observation, inference, action, and consequence.
